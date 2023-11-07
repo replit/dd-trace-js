@@ -101,7 +101,7 @@ class StatsBucket {
    * @param {BacklogData} backlogData
    * @returns {Backlog}
    */
-  addBacklog (backlogData) {
+  forBacklog (backlogData) {
     const backlog = new Backlog(backlogData)
     const existingBacklog = this._backlogs.get(backlog.hash)
     if (existingBacklog !== undefined) {
@@ -273,7 +273,7 @@ class DataStreamsProcessor {
   recordOffset ({ timestamp, ...backlogData }) {
     if (!this.enabled) return
     return this.bucketFromTimestamp(timestamp)
-      .addBacklog(backlogData)
+      .forBacklog(backlogData)
   }
 
   setOffset (offsetObj) {
