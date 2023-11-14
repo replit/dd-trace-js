@@ -58,7 +58,7 @@ class HttpClientPlugin extends ClientPlugin {
       span._spanContext._trace.record = false
     }
 
-    if (!(hasAmazonSignature(options) || !this.config.propagationFilter(uri))) {
+    if (this.config.propagationFilter(uri)) {
       this.tracer.inject(span, HTTP_HEADERS, options.headers)
     }
 
@@ -193,31 +193,6 @@ function getHooks (config) {
   const request = (config.hooks && config.hooks.request) || noop
 
   return { request }
-}
-
-function hasAmazonSignature (options) {
-  if (!options) {
-    return false
-  }
-
-  if (options.headers) {
-    const headers = Object.keys(options.headers)
-      .reduce((prev, next) => Object.assign(prev, {
-        [next.toLowerCase()]: options.headers[next]
-      }), {})
-
-    if (headers['x-amz-signature']) {
-      return true
-    }
-
-    if ([].concat(headers['authorization']).some(startsWith('AWS4-HMAC-SHA256'))) {
-      return true
-    }
-  }
-
-  const search = options.search || options.path
-
-  return search && search.toLowerCase().indexOf('x-amz-signature=') !== -1
 }
 
 function extractSessionDetails (options) {
