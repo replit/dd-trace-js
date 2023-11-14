@@ -1,3 +1,5 @@
+const GLOB = Symbol('*')
+
 class Mask {
   /**
    * The mask to apply to JSON objects
@@ -5,7 +7,6 @@ class Mask {
    * @param {string} filterString
    */
   constructor (filterString) {
-    this._filterString = filterString
     this._root = new MaskNode(
       'root',
       { isDeselect: true, isRoot: true }
@@ -15,6 +16,10 @@ class Mask {
       const chain = this.makeChain(rule)
       this._root.addChild(chain)
     }
+  }
+
+  getHead () {
+    return new MaskHead(this)
   }
 
   /**
@@ -67,9 +72,9 @@ class Mask {
     const localRoot = new MaskNode(keys[0], { isDeselect })
     let head = localRoot
     for (const key of keys.slice(1)) {
-      head = head.addChild(new MaskNode(key, { isDeselect, children: new Map() }))
+      head = head.addChild(new MaskNode(key, { isDeselect }))
     }
-    head.addChild(new MaskNode('*', { isDeselect, children: new Map() }))
+    head.addChild(new MaskNode('*', { isDeselect }))
     return localRoot
   }
 }
@@ -89,7 +94,7 @@ class MaskHead {
   /**
    *
    * @param {string} key
-   * @returns {MaskNode | undefined}
+   * @returns {MaskHead}
    */
   withNext (key) {
     return new MaskHead(this._mask, this._head.next(key))
@@ -108,7 +113,7 @@ class MaskNode {
    * @param {boolean} options.isRoot
    */
   constructor (key, { isDeselect, isRoot = false }) {
-    this.name = key
+    this.name = key === '*' ? GLOB : key
     this._isDeselect = isDeselect
     this._children = new Map()
     this._isRoot = isRoot
@@ -116,9 +121,9 @@ class MaskNode {
 
   get isLeaf () { return this._children.size === 0 }
 
-  get isGlob () { return this.name === '*' }
+  get isGlob () { return this.name === GLOB }
 
-  get globChild () { return this.getChild('*') }
+  get globChild () { return this.getChild(GLOB) }
 
   addChild (node) {
     const myChild = this.getChild(node.name)
@@ -168,16 +173,47 @@ class MaskNode {
         return true
       }
     } else {
-      // Unless we've reached the end of the object we're currently masking, we
-      // can keep going.
-      if (isLast) {
-        if (node.isLeaf || (node._children.size === 1 && node.globChild?.isLeaf)) {
-          return !node._isDeselect
-        }
+      if (isLast || node.isLeaf || (node._children.size === 1 && node.globChild?.isLeaf)) {
+        // If we're:
+        // * at a leaf
+        // * at a terminal glob (that we injected when constructing the tree),
+        // * at the last input object key
+        // Then we have our conclusion.
+        return !node._isDeselect
       }
+      // If we're not at the last key, we want to keep going down the tree - as far as we know
+      // we could be allowed to tag further down anyway
       return true
     }
   }
 }
 
-module.exports = { Mask, MaskNode, MaskHead }
+/**
+ * Helper function for tests. Since we want to short-circuit the evaluation and track tag count and depth
+ * when tagging payloads, we use this one to check the accuracy of the masking
+ * tree building and queries.
+ *
+ * @param {string} filter
+ * @param {object} object
+ */
+function getMaskedObject (filter, object) {
+  function maskRec (object, maskHead = filter.getHead()) {
+    if (Array.isArray(object)) {
+      return object.map((item, index) => maskRec(item, maskHead.withNext(index)))
+    }
+    if (typeof object === 'object') {
+      const results = []
+      for (const [key, value] of Object.entries(object)) {
+        const isLastKey = !(typeof value === 'object')
+        if (!maskHead.canTag(key, isLastKey)) continue
+        results.push([key, maskRec(value, maskHead.withNext(key))])
+      }
+      return Object.fromEntries(results)
+    } else {
+      return object
+    }
+  }
+  return maskRec(object)
+}
+
+module.exports = { Mask, getMaskedObject }

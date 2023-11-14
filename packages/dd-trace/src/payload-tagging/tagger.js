@@ -3,7 +3,6 @@ const {
   PAYLOAD_TAG_RESPONSE_PREFIX: PAYLOAD_RESPONSE_PREFIX,
   PAYLOAD_TAGGING_MAX_TAGS
 } = require('../constants')
-const { MaskHead } = require('./filter')
 
 const redactedKeys = [
   'authorization', 'x-authorization', 'password', 'token'
@@ -19,13 +18,20 @@ function isJSONContentType (contentType) {
   return contentType && typeof contentType === 'string' && contentType.slice(-4) === 'json'
 }
 
-function tagsFromObject (object, filter, maxDepth, prefix) {
+/**
+ * Compute normalized payload tags from any given object.
+ *
+ * @param {object} object
+ * @param {import('./mask').Mask} mask
+ * @param {number} maxDepth
+ * @param {string} prefix
+ * @returns
+ */
+function tagsFromObject (object, mask, maxDepth, prefix) {
   let tagCount = 0
   const result = {}
 
-  const head = new MaskHead(filter)
-
-  function tagRec (prefix, object, maskHead = head, depth = 0) {
+  function tagRec (prefix, object, maskHead = mask.getHead(), depth = 0) {
     // Off by one: _dd.payload_tags_trimmed counts as 1 tag
     if (tagCount >= PAYLOAD_TAGGING_MAX_TAGS - 1) {
       result['_dd.payload_tags_trimmed'] = true
@@ -61,7 +67,6 @@ function tagsFromObject (object, filter, maxDepth, prefix) {
 
     if (typeof object === 'object') {
       for (const [key, value] of Object.entries(object)) {
-        // console.log(`can tag ${key}: ${maskPointer.canTag(key)}`)
         const isLastKey = !(typeof value === 'object')
         if (!maskHead.canTag(key, isLastKey)) continue
         tagRec(`${prefix}.${escapeKey(key)}`, value, maskHead.withNext(key), depth)
